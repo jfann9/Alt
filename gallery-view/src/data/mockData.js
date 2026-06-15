@@ -182,9 +182,9 @@ export const seedAlbums = [
   {
     id: 'album-rookie',
     name: 'Rookie Royalty',
-    cardIds: ['wemby-kaboom', 'knecht-prizm', 'knecht-obsidian'],
-    // No custom AI background yet — Album Art falls back to a themed gradient.
-    albumArt: null,
+    cardIds: ['knecht-prizm', 'knecht-obsidian'],
+    // Lakers-themed AI background for the Dalton Knecht rookies.
+    albumArt: '/card_art/dalton_knecht_background.png',
   },
 ]
 
@@ -196,7 +196,7 @@ export const featuredAlbums = [
     title: 'Wemby Wonder',
     user: '@spurs_vault',
     subtitle: 'Victor Wembanyama',
-    coverImages: ['/card_art/wemby.png'],
+    coverImages: ['/card_art/wemby.png', '/card_art/wemby2.png'],
     likes: 3100,
   },
   {
@@ -204,7 +204,7 @@ export const featuredAlbums = [
     title: 'Complete Charizard Collection',
     user: '@charizard_king',
     subtitle: 'Every Charizard, graded',
-    coverImages: ['/card_art/mega_charizard.png'],
+    coverImages: ['/card_art/mega_charizard.png', '/card_art/charizard2.png'],
     likes: 5400,
   },
 ]

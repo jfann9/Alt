@@ -10,6 +10,7 @@ import GalleryView from './components/GalleryView.jsx'
 import CreateAlbumModal from './components/CreateAlbumModal.jsx'
 import FeaturedAlbums from './components/FeaturedAlbums.jsx'
 import BusinessCallout from './components/BusinessCallout.jsx'
+import Footer from './components/Footer.jsx'
 import { cards, seedAlbums } from './data/mockData.js'
 
 export default function App() {
@@ -77,6 +78,7 @@ export default function App() {
 
       <FeaturedAlbums />
       <BusinessCallout />
+      <Footer />
 
       {showCreate && (
         <CreateAlbumModal
