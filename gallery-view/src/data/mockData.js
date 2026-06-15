@@ -168,45 +168,43 @@ export const cards = [
   },
 ]
 
-// Seed albums the collector already owns. `showcase` enables Showcase Mode and
-// points at the pre-rendered AI background (faked generation).
+// Albums the collector themselves has created so far. `albumArt` points at the
+// AI-generated background used by the "Album Art" view (what the community sees
+// when exploring this collection).
 export const seedAlbums = [
   {
-    id: 'album-pokemon',
-    name: 'Pokémon',
-    emoji: '🔴',
-    cardIds: cards.filter((c) => c.category === CATEGORY.POKEMON).map((c) => c.id),
-    // Showcase Mode swaps in a clean ocean background and features the
-    // Froakie → Frogadier → Mega Greninja ex water evolution line on top.
-    showcase: '/showcase_ocean.svg',
-    showcaseCardIds: ['froakie-54', 'frogadier-55', 'greninja-176'],
+    id: 'album-water',
+    name: 'Water Evolution',
+    cardIds: ['froakie-54', 'frogadier-55', 'greninja-176'],
+    // Clean ocean background (cards removed in Photoshop) — cards float on top.
+    albumArt: '/card_art/ai_background_final.png',
   },
   {
-    id: 'album-basketball',
-    name: 'Basketball',
-    emoji: '🏀',
-    cardIds: cards.filter((c) => c.category === CATEGORY.BASKETBALL).map((c) => c.id),
-    showcase: null,
+    id: 'album-rookie',
+    name: 'Rookie Royalty',
+    cardIds: ['wemby-kaboom', 'knecht-prizm', 'knecht-obsidian'],
+    // No custom AI background yet — Album Art falls back to a themed gradient.
+    albumArt: null,
   },
 ]
 
-// Community "Featured Albums" from other (fake) users — static, display only.
+// Community "Featured Albums" created by OTHER users — static, display only.
+// These are not openable (you can't click into someone else's collection here).
 export const featuredAlbums = [
   {
     id: 'feat-1',
-    title: 'Water Evolution',
-    user: '@vault_king',
-    subtitle: 'Froakie → Greninja',
-    // Multi-card cover: the water evolution line.
-    coverImages: ['/card_art/froakie.jpg', '/card_art/frogadier.jpg', '/card_art/greninja.jpg'],
-    likes: 1210,
+    title: 'Wemby Wonder',
+    user: '@spurs_vault',
+    subtitle: 'Victor Wembanyama',
+    coverImages: ['/card_art/wemby.png'],
+    likes: 3100,
   },
   {
     id: 'feat-2',
-    title: 'Rookie Royalty',
-    user: '@courtsidecollector',
-    subtitle: 'NBA rookies',
-    coverImages: ['/card_art/wemby.png', '/card_art/dalton_knecht_rookie.jpg'],
-    likes: 890,
+    title: 'Complete Charizard Collection',
+    user: '@charizard_king',
+    subtitle: 'Every Charizard, graded',
+    coverImages: ['/card_art/mega_charizard.png'],
+    likes: 5400,
   },
 ]

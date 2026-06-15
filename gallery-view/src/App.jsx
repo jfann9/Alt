@@ -8,7 +8,6 @@ import AlbumStrip from './components/AlbumStrip.jsx'
 import ListView from './components/ListView.jsx'
 import GalleryView from './components/GalleryView.jsx'
 import CreateAlbumModal from './components/CreateAlbumModal.jsx'
-import ShowcaseMode from './components/ShowcaseMode.jsx'
 import FeaturedAlbums from './components/FeaturedAlbums.jsx'
 import BusinessCallout from './components/BusinessCallout.jsx'
 import { cards, seedAlbums } from './data/mockData.js'
@@ -17,10 +16,16 @@ export default function App() {
   const [view, setView] = useState('list') // 'list' | 'gallery' — open on List (Alt's default)
   const [albums, setAlbums] = useState(seedAlbums)
   const [activeAlbumId, setActiveAlbumId] = useState('all')
+  const [albumView, setAlbumView] = useState('standard') // 'standard' | 'art'
   const [showCreate, setShowCreate] = useState(false)
-  const [showcaseAlbum, setShowcaseAlbum] = useState(null)
 
   const activeAlbum = albums.find((a) => a.id === activeAlbumId) || null
+
+  // Selecting an album always starts on the standard grid.
+  const selectAlbum = (id) => {
+    setActiveAlbumId(id)
+    setAlbumView('standard')
+  }
 
   // List View always shows the full collection (so it mirrors Alt exactly).
   // Album filtering only applies in Gallery View, where albums live.
@@ -44,8 +49,6 @@ export default function App() {
     setActiveAlbumId(id)
   }
 
-  const showcaseAvailable = Boolean(activeAlbum?.showcase)
-
   return (
     <div className="min-h-full bg-white">
       <Header totalValue={totalValue} allTimePct={allTimePct} />
@@ -59,14 +62,15 @@ export default function App() {
           <AlbumStrip
             albums={albums}
             activeId={activeAlbumId}
-            onSelect={setActiveAlbumId}
+            onSelect={selectAlbum}
             onCreate={() => setShowCreate(true)}
             cards={cards}
           />
           <GalleryView
             cards={visibleCards}
-            showcaseAvailable={showcaseAvailable}
-            onShowcase={() => setShowcaseAlbum(activeAlbum)}
+            activeAlbum={activeAlbum}
+            albumView={albumView}
+            setAlbumView={setAlbumView}
           />
         </>
       )}
@@ -79,14 +83,6 @@ export default function App() {
           cards={cards}
           onClose={() => setShowCreate(false)}
           onSave={handleCreateAlbum}
-        />
-      )}
-
-      {showcaseAlbum && (
-        <ShowcaseMode
-          album={showcaseAlbum}
-          cards={cards}
-          onClose={() => setShowcaseAlbum(null)}
         />
       )}
     </div>

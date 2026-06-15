@@ -16,12 +16,12 @@ export default function FeaturedAlbums() {
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         {featuredAlbums.map((a) => (
+          // Display only — other users' albums aren't openable here.
           <div
             key={a.id}
-            className="overflow-hidden rounded-2xl border border-alt-line bg-white transition-shadow hover:shadow-lg"
+            className="cursor-default overflow-hidden rounded-2xl border border-alt-line bg-white"
           >
-            {/* Fanned multi-card cover */}
-            <div className="flex h-44 items-center justify-center gap-3 bg-gradient-to-b from-gray-50 to-gray-100 p-4">
+            <div className="relative flex h-44 items-center justify-center gap-3 bg-gradient-to-b from-gray-50 to-gray-100 p-4">
               {a.coverImages.map((img, i) => (
                 <img
                   key={i}
@@ -30,6 +30,9 @@ export default function FeaturedAlbums() {
                   className="h-full w-auto rounded-lg object-contain drop-shadow-md"
                 />
               ))}
+              <span className="absolute left-3 top-3 rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-bold text-alt-gray shadow">
+                👥 COMMUNITY
+              </span>
             </div>
             <div className="flex items-center justify-between p-4">
               <div>
