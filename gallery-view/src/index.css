@@ -1,0 +1,45 @@
+@import "tailwindcss";
+
+/* Alt theme tokens. Tailwind v4 reads @theme to generate utilities like bg-alt-purple. */
+@theme {
+  --color-alt-purple: #7c5cfc;
+  --color-alt-purple-dark: #6a47f0;
+  --color-alt-purple-light: #efeaff;
+  --color-alt-ink: #1a1726;
+  --color-alt-gray: #6b7280;
+  --color-alt-line: #ececf1;
+  --color-alt-green: #16a34a;
+  --color-alt-green-bg: #e7f7ee;
+  --color-alt-red: #dc2626;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: #ffffff;
+  color: var(--color-alt-ink);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica,
+    Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Gentle fade used when switching between List and Gallery views. */
+@keyframes alt-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.alt-fade {
+  animation: alt-fade-in 0.22s ease-out;
+}
