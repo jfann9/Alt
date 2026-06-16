@@ -19,6 +19,8 @@ The architecture makes three points a senior data engineer is expected to land:
 
 > **Key insight to articulate:** card identification is an **open-set retrieval / entity-resolution** problem, not fixed-class classification. The card universe is unbounded and grows weekly, so we never train a from-scratch classifier. We resolve with cheap text rules, then **retrieval over pretrained image embeddings**, then a vision LLM, then a human — paying for each tier only when the one before it isn't confident enough.
 
+> **Strategic context (confirmed by an Alt co-founder):** Alt's long-term goal is **raw (ungraded) value data for both sports and TCG**. Today Alt has *graded* values for both. Raw/ungraded valuation is the harder, messier frontier — there's no PSA/BGS cert to anchor on, listings are noisier, and image evidence matters more (base vs. parallel, reprint vs. real). That is exactly where conditional CV/NLP routing earns its keep, and TCG is a priority expansion to reach parity with sports.
+
 ---
 
 ## 2. Medallion architecture (Bronze → Silver → Gold)

@@ -1,0 +1,13 @@
+# --- Build 1: ingestion / scraping (active now) ---
+requests>=2.32
+beautifulsoup4>=4.12
+lxml>=5.0
+
+# --- Later builds (uncomment as we add tiers) ---
+# anthropic>=0.40          # Tier 2 LLM text + Tier 4 vision
+# open-clip-torch>=2.24    # Tier 3 image-embedding retrieval
+# torch>=2.2               # CLIP backend (heavy)
+# faiss-cpu>=1.8           # nearest-neighbor index (or fall back to numpy cosine)
+# pillow>=10.0             # image handling
+# streamlit>=1.36          # data-quality dashboard
+# pandas>=2.2              # dashboard queries
