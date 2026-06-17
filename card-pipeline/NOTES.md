@@ -321,11 +321,11 @@ turning the current full-rescan into an incremental load.
 ---
 
 ## G. Known imperfections (be honest about these)
-1. **Player heuristic over-grabs tokens.** `_find_player` keeps capitalized tokens,
-   so `"...Wembanyama #221 PSA 10"` extracts **"Victor Wembanyama PSA"** — "PSA"
-   leaks in. It passed the accuracy check only because we match on **token overlap**.
-   One-line fix: add `PSA/BGS/SGC/CGC/BVG` (and grade words) to `_STOP_WORDS`. The
-   real fix is the **player-master lookup** (§C).
+1. **Player heuristic over-grabs — now mitigated (§H).** The capitalized-token
+   heuristic (`_candidate_name`) once extracted **"Victor Wembanyama PSA"**. Fixed
+   two ways: grade companies are now in the stop-words, AND the **dim_player
+   resolver** normalizes the candidate to the canonical name and verifies it exists.
+   Players not in the master (MLB/NFL today) still fall back to the raw heuristic.
 2. **Parallel vocabulary ceiling.** Exotic parallels ("Foilfractor", "Blackout")
    aren't in `KNOWN_PARALLELS`, so they resolve as **confidently base** — the
    dangerous "confidently wrong" case. Caught downstream by the image tier + the
@@ -336,3 +336,51 @@ turning the current full-rescan into an incremental load.
 4. **Confidence is a heuristic, not a model probability** — by design (see the
    `plan.md` discussion and the README to come). It's transparent, needs no training
    data, and is validated/tuned against ground truth.
+
+---
+
+## H. Reference dimensions (master data)
+
+**Files:** `reference/schema.py` (DDL) · `reference/seed_vocabulary.py` ·
+`reference/seed_players.py` · `reference/seed_all.py` · `reference/lookup.py`.
+Seed once: `python -m reference.seed_all`. They live in the same SQLite DB as the
+medallion tables but are seeded separately and are **not** dropped by a pipeline run.
+
+### The tables (and the modeling decisions to defend)
+- **`dim_vocabulary`** — 97 terms (sets, parallels, grade companies, uncertainty
+  cues, stop words). A **typed reference dimension**: surrogate PK `term_id`, a
+  `term_type` discriminator, the `term`, and a `canonical_term`. This replaces the
+  hardcoded Python lists — `text_extract` loads from it and falls back to in-code
+  defaults if it isn't seeded. (Reference data lives in data, not code — NOTES §C.)
+- **`dim_player`** — 5,103 NBA/ABA players from nba_api's **offline static list**
+  (no scraping/anti-bot). Grain = **one row per player**. PK = surrogate
+  `player_id`; **natural key** = `nba_person_id` (UNIQUE); the name is an attribute.
+- **`player_alias`** — nicknames/spellings → player (1-to-many): "Wemby" → Victor
+  Wembanyama, "SGA" → Shai Gilgeous-Alexander, etc.
+- **`bridge_player_season`** — created (empty) to make the model explicit: this is
+  where **(player_id, season, team_id)** belongs — the composite key — *not* on the
+  player. It's a roster bridge/fact, seeded from roster data later. **This is the
+  answer to "should the player PK be (year, team, player)?": no — that's this
+  separate bridge.**
+
+### The resolver (`lookup.build_player_resolver`)
+Loads dim_player + player_alias into memory once, returns a closure. **Precision-
+first**: exact **full-name** or **alias** only, **accent-folded** ("Luka Doncic" ↔
+"Luka Dončić"), with trailing-junk trimming ("Victor Wembanyama PSA" → "Victor
+Wembanyama"). The extractor calls it to validate/normalize the name and treat a
+verified player as full-weight.
+
+### Lessons baked in (great interview material)
+- **Cross-entity collision (found & fixed):** an earlier "unique last name" rule
+  made NFL **J.J. McCarthy** resolve to NBA **Johnny McCarthy** ("McCarthy" was
+  unique in the NBA master). We dropped lone-last-name matching. The *correct*
+  production fix is **per-sport masters + sport-scoped resolution**.
+- **The master also flags non-cards:** sealed boxes ("Mega Box", "Blaster Box")
+  correctly fail to resolve — a free signal for "this listing isn't a single card."
+- **Coverage today:** only basketball has a master, so **37 of 42** basketball cards
+  resolve (the other 5 are boxes); MLB (MLB Stats API) and NFL masters extend this.
+
+### Production shape (AWS)
+dim tables → Redshift/Aurora/Glue; player/card masters as **conformed dimensions**;
+**OpenSearch** for fuzzy matching at scale; alias growth via the human-review
+feedback loop (NOTES §C).

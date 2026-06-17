@@ -16,6 +16,7 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", line_bufferin
 
 import config as C
 from pipeline import ingestion, logging_store, medallion, routing, text_extract
+from reference import lookup as reference_lookup
 
 
 # --------------------------------------------------------------------------- #
@@ -52,17 +53,29 @@ def main() -> None:
     medallion.init_db(conn, reset=True)
     logging_store.reset()
 
+    # Load reference data (vocab + player master). Both degrade gracefully if the
+    # dimensions haven't been seeded (run: python -m reference.seed_all).
+    vocab_from_db = text_extract.load_vocabularies_from_db(conn)
+    resolver = reference_lookup.build_player_resolver(conn)
+    print(f"  vocabulary   : {'dim_vocabulary' if vocab_from_db else 'in-code defaults'}")
+    print(f"  player master: {'dim_player' if resolver else 'not seeded (heuristic only)'}\n")
+
     # Tallies for the summary
     by_decision: dict[str, int] = {}
     by_next: dict[str, int] = {}
     crosstab: dict[tuple[str, str], int] = {}
     resolved_records: list[tuple[dict, dict]] = []  # (extracted_fields, ground_truth)
+    player_resolved_n = 0
 
     for listing in listings:
         lid = listing["listing_id"]
         logging_store.log("ingested", lid, title=listing.get("title"))
 
-        extraction = text_extract.extract(listing["title"], listing.get("description", ""))
+        extraction = text_extract.extract(
+            listing["title"], listing.get("description", ""), player_resolver=resolver
+        )
+        if extraction["fields"]["player_resolved"]:
+            player_resolved_n += 1
         logging_store.log(
             "tier1_extract", lid,
             confidence=extraction["confidence"],
@@ -91,6 +104,8 @@ def main() -> None:
     conn.commit()
     conn.close()
     _summary(len(listings), by_decision, by_next, crosstab, resolved_records)
+    print(f"Player names verified against dim_player master: "
+          f"{player_resolved_n}/{len(listings)}")
 
 
 def _summary(total, by_decision, by_next, crosstab, resolved_records) -> None:

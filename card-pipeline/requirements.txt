@@ -3,6 +3,9 @@ requests>=2.32
 beautifulsoup4>=4.12
 lxml>=5.0
 
+# --- Reference dimensions (seeding only; offline static player list) ---
+nba_api>=1.5            # bundled NBA player master -> dim_player
+
 # --- Later builds (uncomment as we add tiers) ---
 # anthropic>=0.40          # Tier 2 LLM text + Tier 4 vision
 # open-clip-torch>=2.24    # Tier 3 image-embedding retrieval

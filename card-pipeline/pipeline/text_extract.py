@@ -4,52 +4,53 @@ Parses a listing's title + description into structured card fields and a
 confidence score, with NO model calls. Anything this tier resolves confidently
 never costs an API dollar.
 
-Design notes:
-  * Confidence is a weighted sum of the *textual* fields we pin down
-    (player, set, year, number, grade). It deliberately excludes the parallel.
-  * The parallel/finish is a *visual* attribute — often unknowable from text —
-    so we report it separately as `parallel_status`:
-        named     a parallel keyword is present ("Silver", "Refractor", ...)
-        uncertain the text signals an unstated parallel ("see photos", "?")
-        base      no parallel mentioned and no uncertainty -> treat as base
-    The router uses `parallel_status` to decide whether the image tiers are
-    needed even when the textual confidence is high (the ambiguous-image case).
+Two upgrades over the first cut:
+  * The vocabularies (sets, parallels, grade companies, cues, stop words) are
+    loaded from the `dim_vocabulary` reference table when available, falling back
+    to the in-file DEFAULTS below. This keeps reference data out of code (NOTES §C).
+  * An optional `player_resolver` validates the extracted name against the
+    `dim_player` master, normalizing it (and dropping junk like a leaked "PSA").
+
+Confidence is a weighted sum of the *textual* fields we pin down (player, set,
+year, number, grade). It excludes the parallel — a *visual* attribute reported
+separately as `parallel_status` (named | uncertain | base) for the router.
 """
 from __future__ import annotations
 
 import re
+import sqlite3
 
-# --- Vocabularies (longest-first so multi-word brands match before their parts) ---
-KNOWN_SETS = [
+# --- DEFAULT vocabularies (fallback when the dim_vocabulary table isn't seeded) ---
+DEFAULT_SETS = [
     "Topps Chrome", "Topps Heritage", "Bowman Chrome", "Panini Prizm",
     "Panini Select", "Panini Mosaic", "Panini Donruss Optic", "Panini Donruss",
     "Upper Deck", "Bowman", "Topps", "Select", "Mosaic", "Prizm", "Donruss",
     "Optic", "Fleer", "Score",
 ]
-KNOWN_PARALLELS = [
+DEFAULT_PARALLELS = [
     "Reverse Holo", "Red White Blue", "Cracked Ice", "Pink Ice", "Red Ice",
     "Orange Ice", "Green Ice", "Gold Sparkle", "Fast Break", "King Snake",
     "Refractor", "Silver", "Holo", "Mojo", "Ice", "Wave", "Disco", "Shimmer",
     "Sparkle", "Pulsar", "Velocity", "Hyper", "Genesis", "Camo",
     "Gold", "Green", "Pink", "Orange", "Purple", "Blue", "Red",
 ]
-# Phrases that signal the seller is NOT pinning the parallel in text.
-UNCERTAINTY_CUES = [
+DEFAULT_UNCERTAINTY = [
     "see photos", "see pics", "see pictures", "exact parallel", "parallel/finish",
     "which parallel", "exact finish", "pictured", "as shown", "as pictured",
 ]
-# Tokens that are never a player's name — used to clean the name candidate.
-_STOP_WORDS = {
+DEFAULT_GRADE_COMPANIES = ["PSA", "BGS", "BVG", "SGC", "CGC"]
+# Hand-listed fluff that is never a player name. Grade companies/words are here so
+# the name heuristic can't glue "PSA" onto a player even without the resolver.
+BASE_STOP_WORDS = {
     "rc", "rookie", "raw", "ungraded", "graded", "card", "lot", "ships", "ship",
     "top", "loader", "looks", "minty", "mint", "gem", "slabbed", "see", "photos",
     "photo", "pics", "exact", "parallel", "finish", "the", "in", "a", "of", "no",
+    "psa", "bgs", "bvg", "sgc", "cgc",
 }
-_STOP_WORDS |= {w.lower() for s in KNOWN_SETS for w in s.split()}
-_STOP_WORDS |= {w.lower() for p in KNOWN_PARALLELS for w in p.split()}
 
+# --- Static patterns (not vocabulary-driven) ---
 _YEAR_RE = re.compile(r"\b(?:19|20)\d{2}\b")
 _YEAR_APOS_RE = re.compile(r"'(\d{2})\b")
-_GRADE_RE = re.compile(r"\b(PSA|BGS|BVG|SGC|CGC)\s?(10|9\.5|9|8\.5|8|7|6|5)\b", re.I)
 _RAW_RE = re.compile(r"\b(raw|ungraded)\b", re.I)
 _NUMBER_RE = re.compile(r"#\s?(\w+)|\bNo\.?\s?(\d+)\b", re.I)
 _NAME_TOKEN_RE = re.compile(r"[A-Z][a-zA-Z'.-]+")
@@ -58,38 +59,85 @@ _NAME_TOKEN_RE = re.compile(r"[A-Z][a-zA-Z'.-]+")
 _W = {"player": 0.35, "set": 0.20, "year": 0.15, "number": 0.15, "grade": 0.15}
 
 
+# --------------------------------------------------------------------------- #
+# Vocabulary assembly — one path for both DEFAULTS and the DB-loaded values
+# --------------------------------------------------------------------------- #
+def _assemble(sets, parallels, cues, grade_companies, base_stops) -> dict:
+    sets = sorted(sets, key=len, reverse=True)        # longest-first matching
+    parallels = sorted(parallels, key=len, reverse=True)
+    stop = set(base_stops)
+    stop |= {w.lower() for s in sets for w in s.split()}
+    stop |= {w.lower() for p in parallels for w in p.split()}
+    stop |= {g.lower() for g in grade_companies}
+    companies = "|".join(re.escape(g) for g in grade_companies)
+    grade_re = re.compile(rf"\b({companies})\s?(10|9\.5|9|8\.5|8|7|6|5)\b", re.I)
+    return {"sets": sets, "parallels": parallels, "cues": cues,
+            "stop_words": stop, "grade_re": grade_re}
+
+
+_VOCAB = _assemble(DEFAULT_SETS, DEFAULT_PARALLELS, DEFAULT_UNCERTAINTY,
+                   DEFAULT_GRADE_COMPANIES, BASE_STOP_WORDS)
+
+
+def load_vocabularies_from_db(conn: sqlite3.Connection) -> bool:
+    """Replace the active vocabulary with dim_vocabulary contents. Returns True
+    if the table was present and populated; False -> the DEFAULTS stay in use."""
+    global _VOCAB
+    try:
+        rows = conn.execute(
+            "SELECT term_type, term FROM dim_vocabulary WHERE is_active = 1"
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return False  # table doesn't exist yet -> keep defaults
+    if not rows:
+        return False
+
+    buckets: dict[str, list[str]] = {}
+    for term_type, term in rows:
+        buckets.setdefault(term_type, []).append(term)
+    if not buckets.get("brand_set") or not buckets.get("parallel"):
+        return False
+
+    _VOCAB = _assemble(
+        buckets.get("brand_set", []),
+        buckets.get("parallel", []),
+        buckets.get("uncertainty_cue", DEFAULT_UNCERTAINTY),
+        buckets.get("grade_company", DEFAULT_GRADE_COMPANIES),
+        buckets.get("stop_word", BASE_STOP_WORDS),
+    )
+    return True
+
+
+# --------------------------------------------------------------------------- #
+# Field finders (read the active _VOCAB)
+# --------------------------------------------------------------------------- #
 def _find_year(text: str) -> int | None:
     m = _YEAR_RE.search(text)
     if m:
         return int(m.group(0))
-    m = _YEAR_APOS_RE.search(text)  # "'25" -> 2025
+    m = _YEAR_APOS_RE.search(text)
     if m:
         return 2000 + int(m.group(1))
     return None
 
 
 def _find_grade(text: str) -> str | None:
-    m = _GRADE_RE.search(text)
-    if m:
-        return f"{m.group(1).upper()} {m.group(2)}"
-    return None
+    m = _VOCAB["grade_re"].search(text)
+    return f"{m.group(1).upper()} {m.group(2)}" if m else None
 
 
 def _grade_determined(text: str) -> bool:
-    """A grade is 'determined' if a grade is named OR it's explicitly raw/ungraded."""
-    return bool(_GRADE_RE.search(text) or _RAW_RE.search(text))
+    return bool(_VOCAB["grade_re"].search(text) or _RAW_RE.search(text))
 
 
 def _find_number(text: str) -> str | None:
     m = _NUMBER_RE.search(text)
-    if m:
-        return m.group(1) or m.group(2)
-    return None
+    return (m.group(1) or m.group(2)) if m else None
 
 
 def _find_set(text: str) -> str | None:
     low = text.lower()
-    for s in KNOWN_SETS:  # longest-first
+    for s in _VOCAB["sets"]:
         if s.lower() in low:
             return s
     return None
@@ -97,7 +145,7 @@ def _find_set(text: str) -> str | None:
 
 def _find_parallel(text: str) -> str | None:
     low = text.lower()
-    for p in KNOWN_PARALLELS:  # longest-first
+    for p in _VOCAB["parallels"]:
         if re.search(rf"\b{re.escape(p.lower())}\b", low):
             return p
     return None
@@ -107,48 +155,55 @@ def _parallel_status(text: str, parallel: str | None) -> str:
     if parallel:
         return "named"
     low = text.lower()
-    if any(cue in low for cue in UNCERTAINTY_CUES):
+    if any(cue in low for cue in _VOCAB["cues"]):
         return "uncertain"
     return "base"
 
 
-def _find_player(title: str, description: str) -> tuple[str | None, int]:
-    """Heuristic name extraction: first run of capitalized non-stopword tokens.
-
-    Returns (name_or_None, token_count). Token count drives partial confidence —
-    a single token (just a last name) is worth half a full first+last match.
-    """
+def _candidate_name(title: str, description: str) -> tuple[str | None, int]:
+    """Heuristic: first run of capitalized non-stopword tokens (see NOTES §G)."""
+    stop = _VOCAB["stop_words"]
     for source in (title, description):
-        tokens = _NAME_TOKEN_RE.findall(source)
         run: list[str] = []
-        for tok in tokens:
-            if tok.lower() in _STOP_WORDS:
+        for tok in _NAME_TOKEN_RE.findall(source):
+            if tok.lower() in stop:
                 if run:
                     break
                 continue
             run.append(tok)
-            if len(run) == 3:  # cap — names are 1-3 tokens here
+            if len(run) == 3:
                 break
         if len(run) >= 2:
             return " ".join(run), len(run)
-        if len(run) == 1 and source is description:  # fall back to a lone token
+        if len(run) == 1 and source is description:
             return run[0], 1
-    # last resort: a lone token from the title
-    tokens = [t for t in _NAME_TOKEN_RE.findall(title) if t.lower() not in _STOP_WORDS]
-    if tokens:
-        return tokens[0], 1
-    return None, 0
+    tokens = [t for t in _NAME_TOKEN_RE.findall(title) if t.lower() not in stop]
+    return (tokens[0], 1) if tokens else (None, 0)
 
 
 def _language(text: str) -> str:
     return "Japanese" if re.search(r"[぀-ヿ一-鿿]", text) else "English"
 
 
-def extract(title: str, description: str = "") -> dict:
-    """Run Tier-1 extraction. Returns fields, per-field hits, and confidence."""
+# --------------------------------------------------------------------------- #
+# Public entry point
+# --------------------------------------------------------------------------- #
+def extract(title: str, description: str = "", player_resolver=None) -> dict:
+    """Run Tier-1 extraction.
+
+    player_resolver: optional callable(name:str) -> {"name", "player_id"} | None,
+    typically built from the dim_player master. When it resolves a candidate, the
+    name is normalized to canonical and treated as verified (full player weight).
+    """
     text = f"{title} {description}".strip()
 
-    player, n_tokens = _find_player(title, description)
+    candidate, n_tokens = _candidate_name(title, description)
+    player, player_id, resolved = candidate, None, False
+    if player_resolver and candidate:
+        hit = player_resolver(candidate)
+        if hit:
+            player, player_id, resolved = hit["name"], hit["player_id"], True
+
     year = _find_year(text)
     set_name = _find_set(text)
     number = _find_number(text)
@@ -156,10 +211,11 @@ def extract(title: str, description: str = "") -> dict:
     parallel = _find_parallel(text)
     pstatus = _parallel_status(text, parallel)
 
-    # Confidence = weighted coverage of textual fields.
     conf = 0.0
     if player:
-        conf += _W["player"] * (1.0 if n_tokens >= 2 else 0.5)
+        # Verified-against-master OR a 2+ token guess earns full weight; a lone
+        # unverified token earns half.
+        conf += _W["player"] * (1.0 if (resolved or n_tokens >= 2) else 0.5)
     if set_name:
         conf += _W["set"]
     if year:
@@ -172,6 +228,8 @@ def extract(title: str, description: str = "") -> dict:
     return {
         "fields": {
             "player": player,
+            "player_id": player_id,
+            "player_resolved": resolved,
             "set_name": set_name,
             "year": year,
             "card_number": number,
